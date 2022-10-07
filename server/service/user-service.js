@@ -4,17 +4,18 @@ const uuid = require('uuid');
 const mailService = require('./mail-service');
 const tokenService = require('./token-service');
 const UserDto = require('../dto/user-dto');
+const ApiError = require('../exeptions/api-error');
 
 class UserService {
     async registration(email, password) {
         const candidate = await User.findOne({email});
         if (candidate) {
-            throw new Error("The user already exists!");
+            throw ApiError.BadRequest("The user already exists!");
         }
         const hasPassword = await bcrypt.hash(password, 4);
         const activationLink = uuid.v4();
+        await mailService.sendActivationMail(email, `${process.env.API_URL}/api/activate/${activationLink}`);
         const user = await User.create({email, password: hasPassword, activationLink});
-        await mailService.sendActivationMail(email, activationLink);
         const userDto = new UserDto(user);
         const tokens = tokenService.generateTokens({userDto});
         await tokenService.saveToken(userDto.id, tokens.refreshToken);
@@ -25,44 +26,57 @@ class UserService {
     }
 
 
-    async login(req, res, next) {
-        try {
+    async login(email, password) {
+        const user = await User.findOne({email});
+        if (!user) {
+            throw ApiError.BadRequest('The user was not found');
+        }
+        const isPasswordEquals = await bcrypt.compare(password, user.password);
+        if (!isPasswordEquals) {
+            throw ApiError.BadRequest('The password is incorrect');
+        }
+        const userDto = new UserDto(user);
+        const tokens = tokenService.generateTokens({...userDto});
+        await tokenService.saveToken(userDto.id, tokens.refreshToken);
+        return {...tokens, user: userDto};
+    }
 
-        } catch (e) {
-            console.log(e);
+    async logout(refreshToken) {
+        const token = await tokenService.removeToken(refreshToken);
+        return token;
+    }
+
+    async activate(activationLink) {
+        const user = await User.findOne({activationLink})
+        if (!user) {
+            throw ApiError.BadRequest('Incorrect activation link');
+        }
+        user.isActivated = true;
+        await user.save();
+    }
+
+    async refresh(refreshToken) {
+        if (!refreshToken) {
+            throw ApiError.UnauthorizedError();
+        }
+        const userData = tokenService.validateRefreshToken(refreshToken);
+        const tokenFromDb = tokenService.findToken(refreshToken);
+        if (!userData || !tokenFromDb) {
+            throw ApiError.UnauthorizedError();
+        }
+        const user = await User.findById(userData.id);
+        const userDto = new UserDto(user);
+        const tokens = tokenService.generateTokens({...userDto});
+        await tokenService.saveToken(userDto.id, tokens.refreshToken);
+        return {
+            ...tokens,
+            user: userDto
         }
     }
 
-    async logout(req, res, next) {
-        try {
-
-        } catch (e) {
-            console.log(e);
-        }
-    }
-
-    async activate(req, res, next) {
-        try {
-
-        } catch (e) {
-            console.log(e);
-        }
-    }
-
-    async refresh(req, res, next) {
-        try {
-
-        } catch (e) {
-            console.log(e);
-        }
-    }
-
-    async users(req, res, next) {
-        try {
-            res.json("fdslkfjaslkdfj");
-        } catch (e) {
-            console.log(e);
-        }
+    async getAllUsers() {
+        const users = await User.find();
+        return users;
     }
 }
 

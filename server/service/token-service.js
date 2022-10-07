@@ -11,13 +11,41 @@ class TokenService {
         }
     }
 
+    validateAccessToken(token) {
+        try {
+            const userData = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
+            return userData;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    validateRefreshToken(token) {
+        try {
+            const userData = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
+            return userData;
+        } catch (e) {
+            return null;
+        }
+    }
+
     async saveToken(userId, refreshToken) {
         const tokeData = await TokenModel.findOne({userId});
         if (tokeData) {
             tokeData.refreshToken = refreshToken;
             return tokeData.save();
         }
-        return await tokeData.create({userId, refreshToken});
+        return await TokenModel.create({userId, refreshToken});
+    }
+
+    async removeToken(refreshToken) {
+        const tokenData = await TokenModel.deleteOne({refreshToken})
+        return tokenData;
+    }
+
+    async findToken(refreshToken) {
+        const tokenData = await TokenModel.findOne({refreshToken})
+        return tokenData;
     }
 }
 
